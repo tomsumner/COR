@@ -129,13 +129,13 @@ k <- cbind(seq(1970,2050),(30 + ((120-30)/((1+exp(-0.5*(seq(1970,2050)-2004)))^(
 dst_n <- cbind(seq(1970,2050),(0 + ((95-0)/((1+exp(-1*(seq(1970,2050)-1993)))^(1/2))))/100)
 dst_p <- cbind(seq(1970,2050),(0 + ((95-0)/((1+exp(-1*(seq(1970,2050)-1993)))^(1/2))))/100)
 
-##### COR screen and treat intervention
+##### COR screen and treat intervention - currently turned off
 # Screen 20% of HIV- adult population per year
 # Avert 0.7*treatment_eff of the disease in that 20% - move these people to latent. zero for children
-COR_prevent <- cbind(c(1970,2015,2016),c(0,0,0.5*0.7*0.8))
+COR_prevent <- cbind(c(1970,2015,2016),0*c(0,0,0.5*0.7*0.8))
 # Also diagnose 20% of prevalent cases through excluding active disease (symptom screen with assumed sensitivity of 70% - HIV- population, WHO review)
 # http://www.who.int/tb/Review2Accuracyofscreeningtests.pdf
-COR_diagnose <- cbind(c(1970,2015,2016),c(0,0,0.2*0.7))
+COR_diagnose <- cbind(c(1970,2015,2016),0*c(0,0,0.2*0.7))
  
 # Combine forcing functions into a list
 force <- list(birth_rate,s_birth,s5,s10,s15,s20,s25,s30,s35,s40,s45,s50,s55,s60,s65,s70,s75,s80,
@@ -147,33 +147,39 @@ force <- list(birth_rate,s_birth,s5,s10,s15,s20,s25,s30,s35,s40,s45,s50,s55,s60,
 # Fit model using importance resampling approach
 
 # Number of runs to do
-n_run = 10
+n_run = 100
 # Years to run model for - always start at 1970
-times_run <- seq(1970,2050 , by=1)
+times_run <- seq(1970,2035 , by=1)
 
 # Create arrays for storing outputs and likelihood 
 I = mat.or.vec(length(times_run),n_run)
-Ih = I
 M = I
-P = I                                                    
+P = I    
+LTBI = I
+per_HIV = I
 
 # Calculate likelihood at each time point (1990-2013) for each output
 L_inc = mat.or.vec(n_run,24)
-L_HIV_inc = L_inc
 L_mort = L_inc
 L_prev = L_inc
 L = rep(0,n_run)
 
 # Sampled parameters
 beta <- rep(0,n_run)
+a_a <- beta
+v <- beta
+
+ptm <- proc.time()
 
 for (runs in 1:n_run){
   
   # sample parameters - just beta for now
   
-  beta[runs] = runif(1,19,20)
-  print(c(runs,beta[runs]))
-
+  beta[runs] = runif(1,17,20)
+  a_a[runs] = runif(1,0.08,0.15)
+  v[runs] = runif(1,0.0001,0.0025)
+  print(c(runs,beta[runs],a_a[runs],v[runs]))
+  
   # Fitness of MDR, used to calculate parameter for superinfections
   # Both of these are passed into "parms" together with e, the MDR acquisition rate (we set this to zero to exclude MDR in equilibirum phase)
 
@@ -185,9 +191,9 @@ for (runs in 1:n_run){
   # adults (>15) (_a), 0-4 (_0), 5-9 (_5) and 10-14 (_10)
   
   # create parameter vector to pass to model
-  parms <- c(age1 = 1/5, age2 = 1/21, beta = 19, 
-            a_a = 0.14, a0 = 0.26432, a5 = 0.14056, a10 = 0.056,  
-            p = 0.65, v = 0.001, 
+  parms <- c(age1 = 1/5, age2 = 1/21, beta = beta[runs], 
+            a_a = a_a[runs], a0 = 0.26432, a5 = 0.14056, a10 = 0.056,  
+            p = 0.65, v = v[runs], 
             sig_a = 0.45, sig0 = 0.0684, sig5 = 0.0414, sig10 = 0.0846, rel_inf = 0.25, theta = 0.02, r = 0.25, 
             mu_N = 0.25, mu_N0 = 0.426, mu_I = 0.35, mu_I0 = 0.59, fit_cost = fit_cost, e = e, g=g, l_s = 0.83, l_m = 0.7, d = 0.8, tau_s = 0.76, tau_m = 0.5,
             eff_n = 0.61, eff_p = 0.45, 
@@ -257,7 +263,9 @@ for (runs in 1:n_run){
   
   I[,runs] = 100000*(out[,"Cases_neg"]+out[,"Cases_pos"]+out[,"Cases_ART"])/out[,"Total"]  # TB incidence
   M[,runs] = 100000*out[,"TB_deaths"]/out[,"Total"]                                        # TB mortality
-  P[,runs] = 100000*(out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]                     # TB prevalence                                                      
+  P[,runs] = 100000*(out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]                     # TB prevalence  
+  LTBI[,runs] = 100*(out[,"Total_L"]+out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]     # LTBI
+  per_HIV[,runs] = 100*(out[,"Cases_pos"]+out[,"Cases_ART"])/(out[,"Cases_neg"]+out[,"Cases_pos"]+out[,"Cases_ART"]) # % incident TB in HIV+
     
   # Calculate likelihood at each time point for each output
   L_inc[runs,]<-((2*pi*v_inc)^(-1/2))*exp(-(1/(2*v_inc))*((I[,runs][21:44]-TB_data[,"inc_mid"])^2))
@@ -268,7 +276,258 @@ for (runs in 1:n_run){
   L[runs]<-prod(L_inc[runs,15:24])*prod(L_mort[runs,15:24])*prod(L_prev[runs,15:24])
   
 }
+
+proc.time() - ptm
   
+# Resample parameter sets based on likelihood to get a set of good parameters
+N_resamp<-10000
+t<-sample(seq(1:n_run),N_resamp,replace=TRUE,prob=L/sum(L))
+unique_t<-unique(t)
+
+## Now rerun for each unique accepted sample with COR screening turned on
+
+##### COR screen and treat intervention - turn it on
+# Screen 20% of HIV- adult population per year
+# Avert 0.7*treatment_eff of the disease in that 20% - move these people to latent. zero for children
+
+Ic = mat.or.vec(length(times_run),length(unique_t))
+Mc = Ic
+Pc = Ic   
+LTBIc = Ic
+
+Is <- Ic
+Ms <- Ic
+Ps <- Ic
+LTBIs <- Ic
+
+# sort the parameter sets to run into ascending order
+t_to_run <- sort(unique_t)
+for (runs in 1:length(unique_t)){
+  
+  # % screen = 20%
+  p_screen <- 0.2
+  # sensitivity of COR = 70%
+  sens_COR <- 0.7
+  # treatment efficacy = 70% (60-80)
+  v_eff<-(((0.8-0.6)/2)/1.96)^2
+  treat_eff <- rnorm(1,0.7,v_eff)
+  # sensitivity of symptom screen = 70%
+  sens_sym <- 0.7
+  
+  COR_prevent <- cbind(c(1970,2019,2020),c(0,0,p_screen*sens_COR*treat_eff))
+  # Also diagnose 20% of prevalent cases through excluding active disease (symptom screen with assumed sensitivity of 70% - HIV- population, WHO review)
+  # http://www.who.int/tb/Review2Accuracyofscreeningtests.pdf
+  COR_diagnose <- cbind(c(1970,2019,2020),c(0,0,p_screen*sens_sym))
+  
+  # Combine forcing functions into a list
+  force <- list(birth_rate,s_birth,s5,s10,s15,s20,s25,s30,s35,s40,s45,s50,s55,s60,s65,s70,s75,s80,
+                h0,h5,h10,h15,h20,h25,h30,h35,h40,h45,h50,h55,h60,h65,h70,h75,h80,
+                Ahigh,A500,A349,A249,A199,A99,A50,Athresh,
+                BCG_cov,pop_ad,k,dst_n,dst_p,
+                COR_prevent,COR_diagnose)
+  
+  
+  j <- t_to_run[runs]
+  
+  # create parameter vector to pass to model
+  parms <- c(age1 = 1/5, age2 = 1/21, beta = beta[j], 
+             a_a = a_a[j], a0 = 0.26432, a5 = 0.14056, a10 = 0.056,  
+             p = 0.65, v = v[j], 
+             sig_a = 0.45, sig0 = 0.0684, sig5 = 0.0414, sig10 = 0.0846, rel_inf = 0.25, theta = 0.02, r = 0.25, 
+             mu_N = 0.25, mu_N0 = 0.426, mu_I = 0.35, mu_I0 = 0.59, fit_cost = fit_cost, e = e, g=g, l_s = 0.83, l_m = 0.7, d = 0.8, tau_s = 0.76, tau_m = 0.5,
+             eff_n = 0.61, eff_p = 0.45, 
+             muN_H = 0.45, muI_H = 0.6, RR1a = 2, RR2a = 1.288, RR1v = 3, RR2v = 3, RR1p = 0.5, RR2p = 1.1,
+             ART_TB1 = 0.7, ART_TB2 = 0.5, ART_TB3 = 0.35, ART_mort1 = 0.5, ART_mort2 = 0.4, ART_mort3 = 0.3,
+             BCG_eff = 0.39,
+             sig_H = 0.35,r_H=0.15)
+  
+  # Run the model for eq.
+  
+  # First run the model from 1970 pop with 1970 birth/death rates and care and control parameters with 100 TB cases (no MDR or HIV) 
+  # for 100 years to get stable age structure and disease state
+  
+  # Times to run model for
+  times <- seq(0,100, by=1)
+  
+  # Initial conditions - all susceptible
+  temp <- c()
+  for (i in 1:num_ages){temp[i]<-UN_pop_age[21,i+1]}
+  xstart <- c(S=c(temp),
+              Lsn=rep(0,num_ages),Lsp=rep(0,num_ages),Lmn=rep(0,num_ages),Lmp=rep(0,num_ages),
+              Nsn=rep(0,num_ages),Nsp=rep(0,num_ages),Nmn=rep(0,num_ages),Nmp=rep(0,num_ages),
+              Isn=c(rep(0,5),100,rep(0,11)),Isp=rep(0,num_ages),Imn=rep(0,num_ages),Imp=rep(0,num_ages),
+              S_H=rep(0,num_ages*7),
+              Lsn_H=rep(0,num_ages*7),Lsp_H=rep(0,num_ages*7),Lmn_H=rep(0,num_ages*7),Lmp_H=rep(0,num_ages*7),
+              Nsn_H=rep(0,num_ages*7),Nsp_H=rep(0,num_ages*7),Nmn_H=rep(0,num_ages*7),Nmp_H=rep(0,num_ages*7),
+              Isn_H=rep(0,num_ages*7),Isp_H=rep(0,num_ages*7),Imn_H=rep(0,num_ages*7),Imp_H=rep(0,num_ages*7),
+              S_A=rep(0,num_ages*7*3),
+              Lsn_A=rep(0,num_ages*7*3),Lsp_A=rep(0,num_ages*7*3),Lmn_A=rep(0,num_ages*7*3),Lmp_A=rep(0,num_ages*7*3),
+              Nsn_A=rep(0,num_ages*7*3),Nsp_A=rep(0,num_ages*7*3),Nmn_A=rep(0,num_ages*7*3),Nmp_A=rep(0,num_ages*7*3),
+              Isn_A=rep(0,num_ages*7*3),Isp_A=rep(0,num_ages*7*3),Imn_A=rep(0,num_ages*7*3),Imp_A=rep(0,num_ages*7*3))
+  
+  # For initialisation run turn off MDR by setting e = 0
+  parms["e"]=0
+  
+  # Run the model
+  time_eq <- system.time(out_eq <- ode(y=xstart, times, func = "derivsc",
+                                       parms = parms, dllname = "TB_model_v4",initforc = "forcc",
+                                       forcings=force, initfunc = "parmsc", nout = 44,
+                                       outnames = c("Total","Total_S","Total_Ls","Total_Lm","Total_L","Total_Ns","Total_Nm",
+                                                    "Total_N","Total_Is","Total_Im","Total_I","Total_DS","Total_MDR","FS","FM",
+                                                    "CD4500","CD4350_500","CD4250_349","CD4200_249","CD4100_199","CD450_99","CD450",
+                                                    "ART500","ART350_500","ART250_349","ART200_249","ART100_199","ART50_99","ART50",
+                                                    "v1","v2","v3","v4","v5","v6","v7","ART_tot","ART_need","ART_new","ART_on","TB_deaths",
+                                                    "Cases_neg","Cases_pos","Cases_ART"), method = rkMethod("rk34f")))
+  
+  # Adjust pop down to 1970 values and reassign initial conditions - model can now be run from 1970 with TB and HIV
+  temp <- out_eq[dim(out_eq)[1],2:6410]
+  temp <- temp/(sum(temp)/22502) # 22502 is total pop from UN estimates in 1970)
+  xstart <- temp
+  
+  # Reset e to allow MDR
+  parms["e"]=e
+  
+  # Run the model
+  time_run <-system.time(out <- ode(y=xstart, times_run, func = "derivsc",
+                                    parms = parms, dllname = "TB_model_v4",initforc = "forcc",
+                                    forcings=force, initfunc = "parmsc", nout = 44,
+                                    outnames = c("Total","Total_S","Total_Ls","Total_Lm","Total_L","Total_Ns","Total_Nm",
+                                                 "Total_N","Total_Is","Total_Im","Total_I","Total_DS","Total_MDR","FS","FM",
+                                                 "CD4500","CD4350_500","CD4250_349","CD4200_249","CD4100_199","CD450_99","CD450",
+                                                 "ART500","ART350_500","ART250_349","ART200_249","ART100_199","ART50_99","ART50",
+                                                 "v1","v2","v3","v4","v5","v6","v7","ART_tot","ART_need","ART_new","ART_on","TB_deaths",
+                                                 "Cases_neg","Cases_pos","Cases_ART"), method = rkMethod("rk34f")))
+  
+  Ic[,runs] = 100000*(out[,"Cases_neg"]+out[,"Cases_pos"]+out[,"Cases_ART"])/out[,"Total"]  # TB incidence
+  Mc[,runs] = 100000*out[,"TB_deaths"]/out[,"Total"]                                        # TB mortality
+  Pc[,runs] = 100000*(out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]                     # TB prevalence  
+  LTBIc[,runs] = 100*(out[,"Total_L"]+out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]     # LTBI
+  
+  # Repeat with just symptom screen i.e. set COR prevent = 0
+  
+  COR_prevent <- cbind(c(1970,2019,2020),c(0,0,0))
+  # Also diagnose 20% of prevalent cases through excluding active disease (symptom screen with assumed sensitivity of 70% - HIV- population, WHO review)
+  # http://www.who.int/tb/Review2Accuracyofscreeningtests.pdf
+  COR_diagnose <- cbind(c(1970,2019,2020),c(0,0,p_screen*sens_sym))
+  
+  # Combine forcing functions into a list
+  force <- list(birth_rate,s_birth,s5,s10,s15,s20,s25,s30,s35,s40,s45,s50,s55,s60,s65,s70,s75,s80,
+                h0,h5,h10,h15,h20,h25,h30,h35,h40,h45,h50,h55,h60,h65,h70,h75,h80,
+                Ahigh,A500,A349,A249,A199,A99,A50,Athresh,
+                BCG_cov,pop_ad,k,dst_n,dst_p,
+                COR_prevent,COR_diagnose)
+  
+  # Run the model
+  time_run <-system.time(out <- ode(y=xstart, times_run, func = "derivsc",
+                                    parms = parms, dllname = "TB_model_v4",initforc = "forcc",
+                                    forcings=force, initfunc = "parmsc", nout = 44,
+                                    outnames = c("Total","Total_S","Total_Ls","Total_Lm","Total_L","Total_Ns","Total_Nm",
+                                                 "Total_N","Total_Is","Total_Im","Total_I","Total_DS","Total_MDR","FS","FM",
+                                                 "CD4500","CD4350_500","CD4250_349","CD4200_249","CD4100_199","CD450_99","CD450",
+                                                 "ART500","ART350_500","ART250_349","ART200_249","ART100_199","ART50_99","ART50",
+                                                 "v1","v2","v3","v4","v5","v6","v7","ART_tot","ART_need","ART_new","ART_on","TB_deaths",
+                                                 "Cases_neg","Cases_pos","Cases_ART"), method = rkMethod("rk34f")))
+  
+  Is[,runs] = 100000*(out[,"Cases_neg"]+out[,"Cases_pos"]+out[,"Cases_ART"])/out[,"Total"]  # TB incidence
+  Ms[,runs] = 100000*out[,"TB_deaths"]/out[,"Total"]                                        # TB mortality
+  Ps[,runs] = 100000*(out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]                     # TB prevalence  
+  LTBIs[,runs] = 100*(out[,"Total_L"]+out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]     # LTBI
+   
+}
+
+# Then duplicate each unique run the correct number of times  
+
+I_c <- Ic[,rep(1:dim(Ic)[2],unname(table(t)))]
+M_c <- Mc[,rep(1:dim(Mc)[2],unname(table(t)))]
+P_c <- Pc[,rep(1:dim(Pc)[2],unname(table(t)))]
+LTBI_c <- LTBIc[,rep(1:dim(LTBIc)[2],unname(table(t)))]
+
+I_s <- Is[,rep(1:dim(Is)[2],unname(table(t)))]
+M_s <- Ms[,rep(1:dim(Ms)[2],unname(table(t)))]
+P_s <- Ps[,rep(1:dim(Ps)[2],unname(table(t)))]
+LTBI_s <- LTBIs[,rep(1:dim(LTBIs)[2],unname(table(t)))]
+
+## Calculate % reduction in TB incidence and mortality from 2015 level by year
+Inc_red_2015 <- as.data.frame(cbind(seq(2015,2035),100*(I[46,sort(t)] - I_c[46:66,])/I[46,sort(t)]))
+Mort_red_2015 <- as.data.frame(cbind(seq(2015,2035),100*(M[46,sort(t)] - M_c[46:66,])/M[46,sort(t)]))
+
+Inc_red_2015_s <- as.data.frame(cbind(seq(2015,2035),100*(I[46,sort(t)] - I_s[46:66,])/I[46,sort(t)]))
+Mort_red_2015_s <- as.data.frame(cbind(seq(2015,2035),100*(M[46,sort(t)] - M_s[46:66,])/M[46,sort(t)]))
+
+# Get quantiles of incidence, prevalence and mortality
+
+# Base case
+I_m=apply(I[,t],1,function(x) quantile(x,probs=c(0.5)))
+I_l9=apply(I[,t],1,function(x) quantile(x,probs=c(0.025)))
+I_u9=apply(I[,t],1,function(x) quantile(x,probs=c(0.975)))
+
+M_m=apply(M[,t],1,function(x) quantile(x,probs=c(0.5)))
+M_l9=apply(M[,t],1,function(x) quantile(x,probs=c(0.025)))
+M_u9=apply(M[,t],1,function(x) quantile(x,probs=c(0.975)))
+
+P_m=apply(P[,t],1,function(x) quantile(x,probs=c(0.5)))
+P_l9=apply(P[,t],1,function(x) quantile(x,probs=c(0.025)))
+P_u9=apply(P[,t],1,function(x) quantile(x,probs=c(0.975)))
+
+L_m=apply(LTBI[,t],1,function(x) quantile(x,probs=c(0.5)))
+L_l9=apply(LTBI[,t],1,function(x) quantile(x,probs=c(0.025)))
+L_u9=apply(LTBI[,t],1,function(x) quantile(x,probs=c(0.975)))
+
+H_m=apply(per_HIV[,t],1,function(x) quantile(x,probs=c(0.5)))
+H_l9=apply(per_HIV[,t],1,function(x) quantile(x,probs=c(0.025)))
+H_u9=apply(per_HIV[,t],1,function(x) quantile(x,probs=c(0.975)))
+
+# Intervention
+I_c_m=apply(I_c,1,function(x) quantile(x,probs=c(0.5)))
+I_c_l9=apply(I_c,1,function(x) quantile(x,probs=c(0.025)))
+I_c_u9=apply(I_c,1,function(x) quantile(x,probs=c(0.975)))
+
+M_c_m=apply(M_c,1,function(x) quantile(x,probs=c(0.5)))
+M_c_l9=apply(M_c,1,function(x) quantile(x,probs=c(0.025)))
+M_c_u9=apply(M_c,1,function(x) quantile(x,probs=c(0.975)))
+
+P_c_m=apply(P_c,1,function(x) quantile(x,probs=c(0.5)))
+P_c_l9=apply(P_c,1,function(x) quantile(x,probs=c(0.025)))
+P_c_u9=apply(P_c,1,function(x) quantile(x,probs=c(0.975)))
+
+L_c_m=apply(LTBI_c,1,function(x) quantile(x,probs=c(0.5)))
+L_c_l9=apply(LTBI_c,1,function(x) quantile(x,probs=c(0.025)))
+L_c_u9=apply(LTBI_c,1,function(x) quantile(x,probs=c(0.975)))
+
+# Just symptom screen
+I_s_m=apply(I_s,1,function(x) quantile(x,probs=c(0.5)))
+I_s_l9=apply(I_s,1,function(x) quantile(x,probs=c(0.025)))
+I_s_u9=apply(I_s,1,function(x) quantile(x,probs=c(0.975)))
+
+M_s_m=apply(M_s,1,function(x) quantile(x,probs=c(0.5)))
+M_s_l9=apply(M_s,1,function(x) quantile(x,probs=c(0.025)))
+M_s_u9=apply(M_s,1,function(x) quantile(x,probs=c(0.975)))
+
+P_s_m=apply(P_s,1,function(x) quantile(x,probs=c(0.5)))
+P_s_l9=apply(P_s,1,function(x) quantile(x,probs=c(0.025)))
+P_s_u9=apply(P_s,1,function(x) quantile(x,probs=c(0.975)))
+
+L_s_m=apply(LTBI_s,1,function(x) quantile(x,probs=c(0.5)))
+L_s_l9=apply(LTBI_s,1,function(x) quantile(x,probs=c(0.025)))
+L_s_u9=apply(LTBI_s,1,function(x) quantile(x,probs=c(0.975)))
+
+# and ranges of reduction in incidence and mortality
+Ired_m=apply(Inc_red_2015,1,function(x) quantile(x,probs=c(0.5)))
+Ired_l9=apply(Inc_red_2015,1,function(x) quantile(x,probs=c(0.025)))
+Ired_u9=apply(Inc_red_2015,1,function(x) quantile(x,probs=c(0.975)))
+
+Mred_m=apply(Mort_red_2015,1,function(x) quantile(x,probs=c(0.5)))
+Mred_l9=apply(Mort_red_2015,1,function(x) quantile(x,probs=c(0.025)))
+Mred_u9=apply(Mort_red_2015,1,function(x) quantile(x,probs=c(0.975)))
+
+Ired_m_s=apply(Inc_red_2015_s,1,function(x) quantile(x,probs=c(0.5)))
+Ired_l9_s=apply(Inc_red_2015_s,1,function(x) quantile(x,probs=c(0.025)))
+Ired_u9_s=apply(Inc_red_2015_s,1,function(x) quantile(x,probs=c(0.975)))
+
+Mred_m_s=apply(Mort_red_2015_s,1,function(x) quantile(x,probs=c(0.5)))
+Mred_l9_s=apply(Mort_red_2015_s,1,function(x) quantile(x,probs=c(0.025)))
+Mred_u9_s=apply(Mort_red_2015_s,1,function(x) quantile(x,probs=c(0.975)))
+
 ###################################################
 # Plot model outputs vs data
 
@@ -276,147 +535,103 @@ for (runs in 1:n_run){
 TB_data_plot <- melt(TB_data,id.vars="year")
 TB_data_plot <- as.data.frame(cbind(TB_data_plot$year,(do.call(rbind, strsplit(as.character(TB_data_plot$variable), "_"))),TB_data_plot$value))
 colnames(TB_data_plot) <- c("Year","var","level","value")
-TB_data_plot <- transform(TB_data_plot, var = c("Incidence","Mortality","Prevalence")[as.factor(var)])
+TB_data_plot <- transform(TB_data_plot, var = c("Incidence (/100k)","Mortality (/100k)","Prevalence (/100k)")[as.factor(var)])
 TB_data_plot <- droplevels(TB_data_plot)
 
-# Convert best fitting model output to long format
-best_fit <- which.max(L) 
-TB_model_plot <- as.data.frame(cbind(out[,"time"],I[,best_fit],M[,best_fit],P[,best_fit]))
-colnames(TB_model_plot) <- c("Year","Incidence","Mortality","Prevalence")
-TB_model_plot <- cbind(melt(TB_model_plot,id.vars="Year"),"mid")
-colnames(TB_model_plot) <- c("Year","var","value","level")
+# Convert model outputs to long format - basecase
+TB_model_plot <- as.data.frame(cbind(out[,"time"],I_m,M_m,P_m,L_m,H_m))
+colnames(TB_model_plot) <- c("Year","Incidence (/100k)","Mortality (/100k)","Prevalence (/100k)","LTBI (%)","HIV+ TB (%)")
+TB_model_plot1 <- cbind(melt(TB_model_plot,id.vars="Year"),"mid")
+colnames(TB_model_plot1) <- c("Year","var","value","level")
 
-# Convert best fitting model output to long format
-best_fit <- which.max(L) 
-TB_model_plotn <- as.data.frame(cbind(out[,"time"],In[,best_fit],Mn[,best_fit],Pn[,best_fit]))
-colnames(TB_model_plotn) <- c("Year","Incidence","Mortality","Prevalence")
-TB_model_plotn <- cbind(melt(TB_model_plotn,id.vars="Year"),"mid")
-colnames(TB_model_plotn) <- c("Year","var","value","level")
+TB_model_plot <- as.data.frame(cbind(out[,"time"],I_l9,M_l9,P_l9,L_l9,H_l9))
+colnames(TB_model_plot) <- c("Year","Incidence (/100k)","Mortality (/100k)","Prevalence (/100k)","LTBI (%)","HIV+ TB (%)")
+TB_model_plot2 <- cbind(melt(TB_model_plot,id.vars="Year"),"lo")
+colnames(TB_model_plot2) <- c("Year","var","value","level")
 
-# Convert best fitting model output to long format
-best_fit <- which.max(L) 
-TB_model_plotc <- as.data.frame(cbind(out[,"time"],Ic[,best_fit],Mc[,best_fit],Pc[,best_fit]))
-colnames(TB_model_plotc) <- c("Year","Incidence","Mortality","Prevalence")
-TB_model_plotc <- cbind(melt(TB_model_plotc,id.vars="Year"),"mid")
-colnames(TB_model_plotc) <- c("Year","var","value","level")
+TB_model_plot <- as.data.frame(cbind(out[,"time"],I_u9,M_u9,P_u9,L_u9,H_u9))
+colnames(TB_model_plot) <- c("Year","Incidence (/100k)","Mortality (/100k)","Prevalence (/100k)","LTBI (%)","HIV+ TB (%)")
+TB_model_plot3 <- cbind(melt(TB_model_plot,id.vars="Year"),"hi")
+colnames(TB_model_plot3) <- c("Year","var","value","level")
 
+TB_model_plot_base <- rbind(TB_model_plot1,TB_model_plot2,TB_model_plot3)
+
+# Add dummy values to specify scales
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Incidence (/100k)",1100,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Incidence (/100k)",0,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Mortality (/100k)",500,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Mortality (/100k)",0,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Prevalence (/100k)",1300,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Prevalence (/100k)",0,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"LTBI (%)",100,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"LTBI (%)",0,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"HIV+ TB (%)",100,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"HIV+ TB (%)",0,"mid"))
+
+# Convert model outputs to long format - COR
+TB_model_plot <- as.data.frame(cbind(out[,"time"],I_c_m,M_c_m,P_c_m,L_c_m))
+colnames(TB_model_plot) <- c("Year","Incidence (/100k)","Mortality (/100k)","Prevalence (/100k)","LTBI (%)")
+TB_model_plot1 <- cbind(melt(TB_model_plot,id.vars="Year"),"mid")
+colnames(TB_model_plot1) <- c("Year","var","value","level")
+
+TB_model_plot <- as.data.frame(cbind(out[,"time"],I_c_l9,M_c_l9,P_c_l9,L_c_l9))
+colnames(TB_model_plot) <- c("Year","Incidence (/100k)","Mortality (/100k)","Prevalence (/100k)","LTBI (%)")
+TB_model_plot2 <- cbind(melt(TB_model_plot,id.vars="Year"),"lo")
+colnames(TB_model_plot2) <- c("Year","var","value","level")
+
+TB_model_plot <- as.data.frame(cbind(out[,"time"],I_c_u9,M_c_u9,P_c_u9,L_c_u9))
+colnames(TB_model_plot) <- c("Year","Incidence (/100k)","Mortality (/100k)","Prevalence (/100k)","LTBI (%)")
+TB_model_plot3 <- cbind(melt(TB_model_plot,id.vars="Year"),"hi")
+colnames(TB_model_plot3) <- c("Year","var","value","level")
+
+TB_model_plot_COR <- rbind(TB_model_plot1,TB_model_plot2,TB_model_plot3)
+
+# Create plot
 fit_plot <- ggplot(TB_data_plot, aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level))+ 
   facet_wrap(~var,scales="free_y")+
   geom_line()+
-  geom_line(data=TB_model_plot,aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value))),linetype="dashed",colour="red")+
-  geom_line(data=TB_model_plotn,aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value))),linetype="solid",colour="red")+
-  geom_line(data=TB_model_plotc,aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value))),linetype="dotted",colour="red")+
-  scale_y_continuous(expand = c(0, 0),"Rate/100,000") +
-  scale_x_continuous(limits=c(2000,2050),expand = c(0, 0),"Year")+
+  geom_line(data=TB_model_plot_base,aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level),colour="red")+
+  #geom_line(data=TB_model_plot_COR,aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level),colour="green")+
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(limits=c(2004,2035),expand = c(0, 0),"Year")+
   scale_linetype_manual(values = c("solid","solid","dashed"))+
   theme_bw() + theme(legend.position = "none")
 
+#### Plot reduction from 2015 values over time
+TB_model_plot <- TB_model_plot <- as.data.frame(cbind(seq(2015,2050),Ired_m,Mred_m))
+colnames(TB_model_plot) <- c("Year","Incidence","Mortality")
+TB_model_plot1 <- cbind(melt(TB_model_plot,id.vars="Year"),"mid")
+colnames(TB_model_plot1) <- c("Year","var","value","level")
+TB_model_plot <- TB_model_plot <- as.data.frame(cbind(seq(2015,2050),Ired_l9,Mred_l9))
+colnames(TB_model_plot) <- c("Year","Incidence","Mortality")
+TB_model_plot2 <- cbind(melt(TB_model_plot,id.vars="Year"),"lo")
+colnames(TB_model_plot2) <- c("Year","var","value","level")
+TB_model_plot <- TB_model_plot <- as.data.frame(cbind(seq(2015,2050),Ired_u9,Mred_u9))
+colnames(TB_model_plot) <- c("Year","Incidence","Mortality")
+TB_model_plot3 <- cbind(melt(TB_model_plot,id.vars="Year"),"hi")
+colnames(TB_model_plot3) <- c("Year","var","value","level")
 
-# Plot pop against UN data ###################
+Red_model_plot <- rbind(TB_model_plot1,TB_model_plot2,TB_model_plot3)
 
-# convert UN data to long format
-temp_data <- melt(UN_pop_age_t,id="Year")
-temp_data_l <- melt(UN_pop_age_low_t,id="Year")
-temp_data_h <- melt(UN_pop_age_high_t,id="Year")
-
-# sum up model outputs over age groups and turn into long format
-tot<-mat.or.vec(81,17)
-for(i in 1:17){
-  tot[,i] <- apply(out,1,function(x) sum(x[seq(i+1,6410,17)]))
-}
-
-temp_model <- as.data.frame(cbind(seq(1970,2050),tot,out[,"Total"]))
-colnames(temp_model) <- colnames(UN_pop_age_t)
-temp_model <- melt(temp_model,id="Year")
-
-# and plot
-plot_pop <- ggplot(temp_model,aes(x=Year,y=value))+
-  geom_line(colour="red")+
-  geom_line(data=temp_data,aes(x=Year,y=value),colour="black")+
-  geom_line(data=temp_data_l,aes(x=Year,y=value),colour="black",linetype="dashed")+
-  geom_line(data=temp_data_h,aes(x=Year,y=value),colour="black",linetype="dashed")+
-  facet_wrap(~variable,scales="free")+
-  xlim(c(1970,2100))
-
-# Resample parameter sets based on likelihood to get a set of good parameters
-N_resamp<-200000
-t<-sample(seq(1:N_runs),N_resamp,replace=TRUE,prob=L/sum(L))
-unique_t<-unique(t)
-
-# Calculate prevalence of LTBI
-LTBI <- 100*Infected[,t]/Total[,t]
-
-# Get quantiles of incidence, mort and LTBI
-I_m=apply(I[,t],1,function(x) quantile(x,probs=c(0.5)))
-I_l9=apply(I[,t],1,function(x) quantile(x,probs=c(0.025)))
-I_u9=apply(I[,t],1,function(x) quantile(x,probs=c(0.975)))
-
-Ih_m=apply(Ih[,t],1,function(x) quantile(x,probs=c(0.5)))
-Ih_l9=apply(Ih[,t],1,function(x) quantile(x,probs=c(0.025)))
-Ih_u9=apply(Ih[,t],1,function(x) quantile(x,probs=c(0.975)))
-
-M_m=apply(M[,t],1,function(x) quantile(x,probs=c(0.5)))
-M_l9=apply(M[,t],1,function(x) quantile(x,probs=c(0.025)))
-M_u9=apply(M[,t],1,function(x) quantile(x,probs=c(0.975)))
-
-Mh_m=apply(Mh[,t],1,function(x) quantile(x,probs=c(0.5)))
-Mh_l9=apply(Mh[,t],1,function(x) quantile(x,probs=c(0.025)))
-Mh_u9=apply(Mh[,t],1,function(x) quantile(x,probs=c(0.975)))
-
-LTBI_m=apply(LTBI[,t],1,function(x) quantile(x,probs=c(0.5)))
-LTBI_l9=apply(LTBI[,t],1,function(x) quantile(x,probs=c(0.025)))
-LTBI_u9=apply(LTBI[,t],1,function(x) quantile(x,probs=c(0.975)))
-
-# Plots
-
-model_data <- as.data.frame(rbind(cbind(seq(1990, 2025, by = 1),I_m,I_l9,I_u9,"Inc","Model"),
-                                  cbind(seq(1990, 2025, by = 1),Ih_m,Ih_l9,Ih_u9,"Inc_HIV","Model"),
-                                  cbind(seq(1990, 2025, by = 1),M_m,M_l9,M_u9,"Mort","Model"),
-                                  cbind(seq(1990, 2025, by = 1),Mh_m,Mh_l9,Mh_u9,"Mort_HIV","Model"),
-                                  cbind(TB_incid,"Inc","Data"),
-                                  cbind(TB_HIV_incid,"Inc_HIV","Data"),
-                                  cbind(TB_mort,"Mort","Data"),
-                                  cbind(TB_HIV_mort,"Mort_HIV","Data")))
-colnames(model_data) <- c("Time","Rate","Lower","Upper","Var","Type")
-
-fit_plot <- ggplot(model_data, aes(x=as.numeric(as.character(Time)),y=as.numeric(as.character(Rate)),color=Type))+
-  # set axis scales and titles
-  scale_y_continuous(expand = c(0, 0),"Rate/100,000") +
-  scale_x_continuous(limits=c(1990,2015),expand = c(0, 0),"Year") +  
-  facet_wrap(~Var,scales="free_y")+
-  # line showing median
+red_plot <- ggplot(Red_model_plot, aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level))+ 
+  facet_wrap(~var,scales="free_y")+
   geom_line()+
-  # ribbon showing 95% CI
-  geom_ribbon(aes(ymin=as.numeric(as.character(Lower)), ymax=as.numeric(as.character(Upper)),fill=Type),alpha=0.3,colour=NA)+
-  # set theme (to remove grey background, position legend within plot and remove legend title)
-  theme_bw() + theme(legend.position = c(0.15,0.9)) + theme(legend.title=element_blank()) + 
-  # this line removes the lines from the legend elements created by the geom_line, geom_point and geom_errobar so that only ribbon shows
-  # also reverses order so that Placebo comes first (defualt is alphabetical)
-  guides(colour=FALSE)+guides(fill=FALSE)+guides(linetype = guide_legend(reverse=TRUE))+
-  # this removes the grid line
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
-
-LTBI_data <- as.data.frame(cbind(seq(1990,2025,by=1),LTBI_m,LTBI_l9,LTBI_u9))
-colnames(LTBI_data) <- c("Time","Rate","Lower","Upper")
-
-LTBI_plot <- ggplot(LTBI_data, aes(x=as.numeric(as.character(Time)),y=as.numeric(as.character(Rate))))+
-  # set axis scales and titles
-  scale_y_continuous(limits=c(0,100),expand = c(0, 0),"LTBI prevalence (%)") +
-  scale_x_continuous(limits=c(1990,2015),expand = c(0, 0),"Year") +  
-  # line showing median
-  geom_line()+
-  # ribbon showing 95% CI
-  geom_ribbon(aes(ymin=as.numeric(as.character(Lower)), ymax=as.numeric(as.character(Upper))),alpha=0.3,colour=NA)+
-  # set theme (to remove grey background, position legend within plot and remove legend title)
-  theme_bw() + theme(legend.position = c(0.15,0.9)) + theme(legend.title=element_blank()) + 
-  # this line removes the lines from the legend elements created by the geom_line, geom_point and geom_errobar so that only ribbon shows
-  # also reverses order so that Placebo comes first (defualt is alphabetical)
-  guides(colour=FALSE)+guides(fill=FALSE)+guides(linetype = guide_legend(reverse=TRUE))+
-  # this removes the grid line
-  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  scale_y_continuous(expand = c(0, 0))+
+  scale_x_continuous(limits=c(2015,2050),expand = c(0, 0),"Year")+
+  scale_linetype_manual(values = c("dashed","solid","solid"))+
+  theme_bw() + theme(legend.position = "none")
 
 
- 
+
+
+
+
+
+
+
+
+
+
 
 # Plot TB prevalence ################################
 plot(out[,"time"],100*out[,"Total_DS"]/out[,"Total"],ylim=c(0,1))
