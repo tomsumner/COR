@@ -132,10 +132,10 @@ dst_p <- cbind(seq(1970,2050),(0 + ((95-0)/((1+exp(-1*(seq(1970,2050)-1993)))^(1
 ##### COR screen and treat intervention - currently turned off
 # Screen 20% of HIV- adult population per year
 # Avert 0.7*treatment_eff of the disease in that 20% - move these people to latent. zero for children
-COR_prevent <- cbind(c(1970,2015,2016),0*c(0,0,0.5*0.7*0.8))
+COR_prevent <- cbind(c(0,0,0),c(0,0,0))
 # Also diagnose 20% of prevalent cases through excluding active disease (symptom screen with assumed sensitivity of 70% - HIV- population, WHO review)
 # http://www.who.int/tb/Review2Accuracyofscreeningtests.pdf
-COR_diagnose <- cbind(c(1970,2015,2016),0*c(0,0,0.2*0.7))
+COR_diagnose <- cbind(c(0,0,0),c(0,0,0))
  
 # Combine forcing functions into a list
 force <- list(birth_rate,s_birth,s5,s10,s15,s20,s25,s30,s35,s40,s45,s50,s55,s60,s65,s70,s75,s80,
@@ -295,6 +295,16 @@ Mc = Ic
 Pc = Ic   
 LTBIc = Ic
 
+Ic20 = Ic
+Mc20 = Ic
+Pc20 = Ic
+LTBIc20 = Ic
+
+Ic40 = Ic
+Mc40 = Ic
+Pc40 = Ic
+LTBIc40 = Ic
+
 Is <- Ic
 Ms <- Ic
 Ps <- Ic
@@ -304,28 +314,29 @@ LTBIs <- Ic
 t_to_run <- sort(unique_t)
 for (runs in 1:length(unique_t)){
   
-  # % screen = 20%
-  p_screen <- 0.2
+  # % screen = 30%
+  p_screen <- 0.3
   # sensitivity of COR = 70%
   sens_COR <- 0.7
   # treatment efficacy = 70% (60-80)
-  v_eff<-(((0.8-0.6)/2)/1.96)^2
+  v_eff<-(((0.8-0.6)/2)/1.96)
   treat_eff <- rnorm(1,0.7,v_eff)
-  # sensitivity of symptom screen = 70%
-  sens_sym <- 0.7
-  
-  COR_prevent <- cbind(c(1970,2019,2020),c(0,0,p_screen*sens_COR*treat_eff))
-  # Also diagnose 20% of prevalent cases through excluding active disease (symptom screen with assumed sensitivity of 70% - HIV- population, WHO review)
+  # sensitivity of COR for active disease = 85% (80-90)
+  v_active<-(((0.9-0.8)/2)/1.96)
+  sens_active <- rnorm(1,0.85,v_eff)
+  # If just ACF would use symptom screen - 60% sensitivity
   # http://www.who.int/tb/Review2Accuracyofscreeningtests.pdf
-  COR_diagnose <- cbind(c(1970,2019,2020),c(0,0,p_screen*sens_sym))
+  sens_sym <- 0.6
   
+  COR_prevent <- cbind(c(1970,2020,2021),c(0,0,p_screen*sens_COR*treat_eff))
+  COR_diagnose <- cbind(c(1970,2020,2021),c(0,0,p_screen*sens_active))
+
   # Combine forcing functions into a list
   force <- list(birth_rate,s_birth,s5,s10,s15,s20,s25,s30,s35,s40,s45,s50,s55,s60,s65,s70,s75,s80,
                 h0,h5,h10,h15,h20,h25,h30,h35,h40,h45,h50,h55,h60,h65,h70,h75,h80,
                 Ahigh,A500,A349,A249,A199,A99,A50,Athresh,
                 BCG_cov,pop_ad,k,dst_n,dst_p,
                 COR_prevent,COR_diagnose)
-  
   
   j <- t_to_run[runs]
   
@@ -405,10 +416,10 @@ for (runs in 1:length(unique_t)){
   
   # Repeat with just symptom screen i.e. set COR prevent = 0
   
-  COR_prevent <- cbind(c(1970,2019,2020),c(0,0,0))
+  COR_prevent <- cbind(c(1970,2020,2021),c(0,0,0))
   # Also diagnose 20% of prevalent cases through excluding active disease (symptom screen with assumed sensitivity of 70% - HIV- population, WHO review)
   # http://www.who.int/tb/Review2Accuracyofscreeningtests.pdf
-  COR_diagnose <- cbind(c(1970,2019,2020),c(0,0,p_screen*sens_sym))
+  COR_diagnose <- cbind(c(1970,2020,2021),c(0,0,p_screen*sens_sym))
   
   # Combine forcing functions into a list
   force <- list(birth_rate,s_birth,s5,s10,s15,s20,s25,s30,s35,s40,s45,s50,s55,s60,s65,s70,s75,s80,
@@ -432,7 +443,69 @@ for (runs in 1:length(unique_t)){
   Ms[,runs] = 100000*out[,"TB_deaths"]/out[,"Total"]                                        # TB mortality
   Ps[,runs] = 100000*(out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]                     # TB prevalence  
   LTBIs[,runs] = 100*(out[,"Total_L"]+out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]     # LTBI
-   
+  
+  # And repeat for 20% coverage
+  p_screen <- 0.2
+  
+  COR_prevent <- cbind(c(1970,2020,2021),c(0,0,p_screen*sens_COR*treat_eff))
+  # Also diagnose 20% of prevalent cases through excluding active disease (symptom screen with assumed sensitivity of 70% - HIV- population, WHO review)
+  # http://www.who.int/tb/Review2Accuracyofscreeningtests.pdf
+  COR_diagnose <- cbind(c(1970,2020,2021),c(0,0,p_screen*sens_active))
+  
+  # Combine forcing functions into a list
+  force <- list(birth_rate,s_birth,s5,s10,s15,s20,s25,s30,s35,s40,s45,s50,s55,s60,s65,s70,s75,s80,
+                h0,h5,h10,h15,h20,h25,h30,h35,h40,h45,h50,h55,h60,h65,h70,h75,h80,
+                Ahigh,A500,A349,A249,A199,A99,A50,Athresh,
+                BCG_cov,pop_ad,k,dst_n,dst_p,
+                COR_prevent,COR_diagnose)
+  
+  # Run the model
+  time_run <-system.time(out <- ode(y=xstart, times_run, func = "derivsc",
+                                    parms = parms, dllname = "TB_model_v4",initforc = "forcc",
+                                    forcings=force, initfunc = "parmsc", nout = 44,
+                                    outnames = c("Total","Total_S","Total_Ls","Total_Lm","Total_L","Total_Ns","Total_Nm",
+                                                 "Total_N","Total_Is","Total_Im","Total_I","Total_DS","Total_MDR","FS","FM",
+                                                 "CD4500","CD4350_500","CD4250_349","CD4200_249","CD4100_199","CD450_99","CD450",
+                                                 "ART500","ART350_500","ART250_349","ART200_249","ART100_199","ART50_99","ART50",
+                                                 "v1","v2","v3","v4","v5","v6","v7","ART_tot","ART_need","ART_new","ART_on","TB_deaths",
+                                                 "Cases_neg","Cases_pos","Cases_ART"), method = rkMethod("rk34f")))
+  
+  Ic20[,runs] = 100000*(out[,"Cases_neg"]+out[,"Cases_pos"]+out[,"Cases_ART"])/out[,"Total"]  # TB incidence
+  Mc20[,runs] = 100000*out[,"TB_deaths"]/out[,"Total"]                                        # TB mortality
+  Pc20[,runs] = 100000*(out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]                     # TB prevalence  
+  LTBIc20[,runs] = 100*(out[,"Total_L"]+out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]     # LTBI
+  
+  # And repeat for 40% coverage
+  p_screen <- 0.4
+  
+  COR_prevent <- cbind(c(1970,2020,2021),c(0,0,p_screen*sens_COR*treat_eff))
+  # Also diagnose 20% of prevalent cases through excluding active disease (symptom screen with assumed sensitivity of 70% - HIV- population, WHO review)
+  # http://www.who.int/tb/Review2Accuracyofscreeningtests.pdf
+  COR_diagnose <- cbind(c(1970,2020,2021),c(0,0,p_screen*sens_active))
+  
+  # Combine forcing functions into a list
+  force <- list(birth_rate,s_birth,s5,s10,s15,s20,s25,s30,s35,s40,s45,s50,s55,s60,s65,s70,s75,s80,
+                h0,h5,h10,h15,h20,h25,h30,h35,h40,h45,h50,h55,h60,h65,h70,h75,h80,
+                Ahigh,A500,A349,A249,A199,A99,A50,Athresh,
+                BCG_cov,pop_ad,k,dst_n,dst_p,
+                COR_prevent,COR_diagnose)
+  
+  # Run the model
+  time_run <-system.time(out <- ode(y=xstart, times_run, func = "derivsc",
+                                    parms = parms, dllname = "TB_model_v4",initforc = "forcc",
+                                    forcings=force, initfunc = "parmsc", nout = 44,
+                                    outnames = c("Total","Total_S","Total_Ls","Total_Lm","Total_L","Total_Ns","Total_Nm",
+                                                 "Total_N","Total_Is","Total_Im","Total_I","Total_DS","Total_MDR","FS","FM",
+                                                 "CD4500","CD4350_500","CD4250_349","CD4200_249","CD4100_199","CD450_99","CD450",
+                                                 "ART500","ART350_500","ART250_349","ART200_249","ART100_199","ART50_99","ART50",
+                                                 "v1","v2","v3","v4","v5","v6","v7","ART_tot","ART_need","ART_new","ART_on","TB_deaths",
+                                                 "Cases_neg","Cases_pos","Cases_ART"), method = rkMethod("rk34f")))
+  
+  Ic40[,runs] = 100000*(out[,"Cases_neg"]+out[,"Cases_pos"]+out[,"Cases_ART"])/out[,"Total"]  # TB incidence
+  Mc40[,runs] = 100000*out[,"TB_deaths"]/out[,"Total"]                                        # TB mortality
+  Pc40[,runs] = 100000*(out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]                     # TB prevalence  
+  LTBIc40[,runs] = 100*(out[,"Total_L"]+out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]     # LTBI
+  
 }
 
 # Then duplicate each unique run the correct number of times  
@@ -442,17 +515,117 @@ M_c <- Mc[,rep(1:dim(Mc)[2],unname(table(t)))]
 P_c <- Pc[,rep(1:dim(Pc)[2],unname(table(t)))]
 LTBI_c <- LTBIc[,rep(1:dim(LTBIc)[2],unname(table(t)))]
 
+I_c20 <- Ic20[,rep(1:dim(Ic20)[2],unname(table(t)))]
+M_c20 <- Mc20[,rep(1:dim(Mc20)[2],unname(table(t)))]
+P_c20 <- Pc20[,rep(1:dim(Pc20)[2],unname(table(t)))]
+LTBI_c20 <- LTBIc20[,rep(1:dim(LTBIc20)[2],unname(table(t)))]
+
+I_c40 <- Ic40[,rep(1:dim(Ic40)[2],unname(table(t)))]
+M_c40 <- Mc40[,rep(1:dim(Mc40)[2],unname(table(t)))]
+P_c40 <- Pc40[,rep(1:dim(Pc40)[2],unname(table(t)))]
+LTBI_c40 <- LTBIc40[,rep(1:dim(LTBIc40)[2],unname(table(t)))]
+
 I_s <- Is[,rep(1:dim(Is)[2],unname(table(t)))]
 M_s <- Ms[,rep(1:dim(Ms)[2],unname(table(t)))]
 P_s <- Ps[,rep(1:dim(Ps)[2],unname(table(t)))]
 LTBI_s <- LTBIs[,rep(1:dim(LTBIs)[2],unname(table(t)))]
 
-## Calculate % reduction in TB incidence and mortality from 2015 level by year
-Inc_red_2015 <- as.data.frame(cbind(seq(2015,2035),100*(I[46,sort(t)] - I_c[46:66,])/I[46,sort(t)]))
-Mort_red_2015 <- as.data.frame(cbind(seq(2015,2035),100*(M[46,sort(t)] - M_c[46:66,])/M[46,sort(t)]))
+## Calculate % reduction in TB incidence and mortality from 2020 level by year and generate boxplot
 
-Inc_red_2015_s <- as.data.frame(cbind(seq(2015,2035),100*(I[46,sort(t)] - I_s[46:66,])/I[46,sort(t)]))
-Mort_red_2015_s <- as.data.frame(cbind(seq(2015,2035),100*(M[46,sort(t)] - M_s[46:66,])/M[46,sort(t)]))
+## By coverage
+I_red_30 <- as.data.frame(cbind(100*(I[51,sort(t)] - I_c[56,])/I[51,sort(t)],
+               100*(I[51,sort(t)] - I_c[61,])/I[51,sort(t)],
+               100*(I[51,sort(t)] - I_c[66,])/I[51,sort(t)]))
+colnames(I_red_30) <- c("2025","2030","2035")
+I_red_30 <- melt(I_red_30)
+I_red_30 <- cbind(I_red_30,"Incidence","30%")
+colnames(I_red_30) <- c("Year","Reduction","Var","Coverage")
+
+M_red_30 <- as.data.frame(cbind(100*(M[51,sort(t)] - M_c[56,])/M[51,sort(t)],
+               100*(M[51,sort(t)] - M_c[61,])/M[51,sort(t)],
+               100*(M[51,sort(t)] - M_c[66,])/M[51,sort(t)]))
+colnames(M_red_30) <- c("2025","2030","2035")
+M_red_30 <- melt(M_red_30)
+M_red_30 <- cbind(M_red_30,"Mortality","30%")
+colnames(M_red_30) <- c("Year","Reduction","Var","Coverage")
+
+I_red_20 <- as.data.frame(cbind(100*(I[51,sort(t)] - I_c20[56,])/I[51,sort(t)],
+               100*(I[51,sort(t)] - I_c20[61,])/I[51,sort(t)],
+               100*(I[51,sort(t)] - I_c20[66,])/I[51,sort(t)]))
+colnames(I_red_20) <- c("2025","2030","2035")
+I_red_20 <- melt(I_red_20)
+I_red_20 <- cbind(I_red_20,"Incidence","20%")
+colnames(I_red_20) <- c("Year","Reduction","Var","Coverage")
+
+M_red_20 <- as.data.frame(cbind(100*(M[51,sort(t)] - M_c20[56,])/M[51,sort(t)],
+               100*(M[51,sort(t)] - M_c20[61,])/M[51,sort(t)],
+               100*(M[51,sort(t)] - M_c20[66,])/M[51,sort(t)]))
+colnames(M_red_20) <- c("2025","2030","2035")
+M_red_20 <- melt(M_red_20)
+M_red_20 <- cbind(M_red_20,"Mortality","20%")
+colnames(M_red_20) <- c("Year","Reduction","Var","Coverage")
+
+I_red_40 <- as.data.frame(cbind(100*(I[51,sort(t)] - I_c40[56,])/I[51,sort(t)],
+               100*(I[51,sort(t)] - I_c40[61,])/I[51,sort(t)],
+               100*(I[51,sort(t)] - I_c40[66,])/I[51,sort(t)]))
+colnames(I_red_40) <- c("2025","2030","2035")
+I_red_40 <- melt(I_red_40)
+I_red_40 <- cbind(I_red_40,"Incidence","40%")
+colnames(I_red_40) <- c("Year","Reduction","Var","Coverage")
+
+M_red_40 <- as.data.frame(cbind(100*(M[51,sort(t)] - M_c40[56,])/M[51,sort(t)],
+               100*(M[51,sort(t)] - M_c40[61,])/M[51,sort(t)],
+               100*(M[51,sort(t)] - M_c40[66,])/M[51,sort(t)]))
+colnames(M_red_40) <- c("2025","2030","2035")
+M_red_40 <- melt(M_red_40)
+M_red_40 <- cbind(M_red_40,"Mortality","40%")
+colnames(M_red_40) <- c("Year","Reduction","Var","Coverage")
+
+temp <- rbind(I_red_20,M_red_20,I_red_30,M_red_30,I_red_40,M_red_40)
+cov_boxplot <- ggplot(aes(y = Reduction, x = Coverage, fill = Year), data = temp) + geom_boxplot()+
+facet_wrap(~Var)+
+scale_y_continuous(limits=c(0,25),expand = c(0, 0),"% Reduction from 2020") +
+theme_bw()
+
+### By component
+
+I_red_all <- as.data.frame(cbind(100*(I[51,sort(t)] - I_c[56,])/I[51,sort(t)],
+                                100*(I[51,sort(t)] - I_c[61,])/I[51,sort(t)],
+                                100*(I[51,sort(t)] - I_c[66,])/I[51,sort(t)]))
+colnames(I_red_all) <- c("2025","2030","2035")
+I_red_all <- melt(I_red_all)
+I_red_all <- cbind(I_red_all,"Incidence","COR+ACF")
+colnames(I_red_all) <- c("Year","Reduction","Var","Strategy")
+
+M_red_all <- as.data.frame(cbind(100*(M[51,sort(t)] - M_c[56,])/M[51,sort(t)],
+                                100*(M[51,sort(t)] - M_c[61,])/M[51,sort(t)],
+                                100*(M[51,sort(t)] - M_c[66,])/M[51,sort(t)]))
+colnames(M_red_all) <- c("2025","2030","2035")
+M_red_all <- melt(M_red_all)
+M_red_all <- cbind(M_red_all,"Mortality","COR+ACF")
+colnames(M_red_all) <- c("Year","Reduction","Var","Strategy")
+
+I_red_s <- as.data.frame(cbind(100*(I[51,sort(t)] - I_s[56,])/I[51,sort(t)],
+                  100*(I[51,sort(t)] - I_s[61,])/I[51,sort(t)],
+                  100*(I[51,sort(t)] - I_s[66,])/I[51,sort(t)]))
+colnames(I_red_s) <- c("2025","2030","2035")
+I_red_s <- melt(I_red_s)
+I_red_s <- cbind(I_red_s,"Incidence","ACF")
+colnames(I_red_s) <- c("Year","Reduction","Var","Strategy")
+
+M_red_s <- as.data.frame(cbind(100*(M[51,sort(t)] - M_s[56,])/M[51,sort(t)],
+                  100*(M[51,sort(t)] - M_s[61,])/M[51,sort(t)],
+                  100*(M[51,sort(t)] - M_s[66,])/M[51,sort(t)]))
+colnames(M_red_s) <- c("2025","2030","2035")
+M_red_s <- melt(M_red_s)
+M_red_s <- cbind(M_red_s,"Mortality","ACF")
+colnames(M_red_s) <- c("Year","Reduction","Var","Strategy")
+
+temp <- rbind(I_red_all,M_red_all,I_red_s,M_red_s)
+comp_boxplot <- ggplot(aes(y = Reduction, x = Strategy, fill = Year), data = temp) + geom_boxplot()+
+  facet_wrap(~Var)+
+  scale_y_continuous(limits=c(0,20),expand = c(0, 0),"% Reduction from 2020") +
+  theme_bw()
 
 # Get quantiles of incidence, prevalence and mortality
 
@@ -494,40 +667,6 @@ L_c_m=apply(LTBI_c,1,function(x) quantile(x,probs=c(0.5)))
 L_c_l9=apply(LTBI_c,1,function(x) quantile(x,probs=c(0.025)))
 L_c_u9=apply(LTBI_c,1,function(x) quantile(x,probs=c(0.975)))
 
-# Just symptom screen
-I_s_m=apply(I_s,1,function(x) quantile(x,probs=c(0.5)))
-I_s_l9=apply(I_s,1,function(x) quantile(x,probs=c(0.025)))
-I_s_u9=apply(I_s,1,function(x) quantile(x,probs=c(0.975)))
-
-M_s_m=apply(M_s,1,function(x) quantile(x,probs=c(0.5)))
-M_s_l9=apply(M_s,1,function(x) quantile(x,probs=c(0.025)))
-M_s_u9=apply(M_s,1,function(x) quantile(x,probs=c(0.975)))
-
-P_s_m=apply(P_s,1,function(x) quantile(x,probs=c(0.5)))
-P_s_l9=apply(P_s,1,function(x) quantile(x,probs=c(0.025)))
-P_s_u9=apply(P_s,1,function(x) quantile(x,probs=c(0.975)))
-
-L_s_m=apply(LTBI_s,1,function(x) quantile(x,probs=c(0.5)))
-L_s_l9=apply(LTBI_s,1,function(x) quantile(x,probs=c(0.025)))
-L_s_u9=apply(LTBI_s,1,function(x) quantile(x,probs=c(0.975)))
-
-# and ranges of reduction in incidence and mortality
-Ired_m=apply(Inc_red_2015,1,function(x) quantile(x,probs=c(0.5)))
-Ired_l9=apply(Inc_red_2015,1,function(x) quantile(x,probs=c(0.025)))
-Ired_u9=apply(Inc_red_2015,1,function(x) quantile(x,probs=c(0.975)))
-
-Mred_m=apply(Mort_red_2015,1,function(x) quantile(x,probs=c(0.5)))
-Mred_l9=apply(Mort_red_2015,1,function(x) quantile(x,probs=c(0.025)))
-Mred_u9=apply(Mort_red_2015,1,function(x) quantile(x,probs=c(0.975)))
-
-Ired_m_s=apply(Inc_red_2015_s,1,function(x) quantile(x,probs=c(0.5)))
-Ired_l9_s=apply(Inc_red_2015_s,1,function(x) quantile(x,probs=c(0.025)))
-Ired_u9_s=apply(Inc_red_2015_s,1,function(x) quantile(x,probs=c(0.975)))
-
-Mred_m_s=apply(Mort_red_2015_s,1,function(x) quantile(x,probs=c(0.5)))
-Mred_l9_s=apply(Mort_red_2015_s,1,function(x) quantile(x,probs=c(0.025)))
-Mred_u9_s=apply(Mort_red_2015_s,1,function(x) quantile(x,probs=c(0.975)))
-
 ###################################################
 # Plot model outputs vs data
 
@@ -559,7 +698,7 @@ TB_model_plot_base <- rbind(TB_model_plot1,TB_model_plot2,TB_model_plot3)
 # Add dummy values to specify scales
 TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Incidence (/100k)",1100,"mid"))
 TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Incidence (/100k)",0,"mid"))
-TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Mortality (/100k)",500,"mid"))
+TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Mortality (/100k)",400,"mid"))
 TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Mortality (/100k)",0,"mid"))
 TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Prevalence (/100k)",1300,"mid"))
 TB_model_plot_base <- rbind(TB_model_plot_base,c(0,"Prevalence (/100k)",0,"mid"))
@@ -591,83 +730,24 @@ fit_plot <- ggplot(TB_data_plot, aes(x=as.numeric(as.character(Year)),y=as.numer
   facet_wrap(~var,scales="free_y")+
   geom_line()+
   geom_line(data=TB_model_plot_base,aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level),colour="red")+
-  #geom_line(data=TB_model_plot_COR,aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level),colour="green")+
+  scale_y_continuous(expand = c(0, 0)) +
+  scale_x_continuous(limits=c(2004,2015),expand = c(0, 0),"Year")+
+  scale_linetype_manual(values = c("solid","solid","dashed"))+
+  theme_bw() + theme(legend.position = "none")
+
+## Create plot of incidence and mortality trends showing COR trajectories too 
+TB_d_plot <- TB_data_plot[TB_data_plot$var %in% c("Incidence (/100k)","Mortality (/100k)"),]
+TB_m_plot_base <- TB_model_plot_base[TB_model_plot_base$var %in% c("Incidence (/100k)","Mortality (/100k)"),]
+TB_m_plot_COR <- TB_model_plot_COR[TB_model_plot_COR$var %in% c("Incidence (/100k)","Mortality (/100k)"),]
+
+int_plot <- ggplot(TB_d_plot, aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level))+ 
+  facet_wrap(~var,scales="free_y")+
+  geom_line()+
+  geom_line(data=TB_m_plot_base,aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level),colour="red")+
+  geom_line(data=TB_m_plot_COR,aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level),colour="blue")+
   scale_y_continuous(expand = c(0, 0)) +
   scale_x_continuous(limits=c(2004,2035),expand = c(0, 0),"Year")+
   scale_linetype_manual(values = c("solid","solid","dashed"))+
   theme_bw() + theme(legend.position = "none")
 
-#### Plot reduction from 2015 values over time
-TB_model_plot <- TB_model_plot <- as.data.frame(cbind(seq(2015,2050),Ired_m,Mred_m))
-colnames(TB_model_plot) <- c("Year","Incidence","Mortality")
-TB_model_plot1 <- cbind(melt(TB_model_plot,id.vars="Year"),"mid")
-colnames(TB_model_plot1) <- c("Year","var","value","level")
-TB_model_plot <- TB_model_plot <- as.data.frame(cbind(seq(2015,2050),Ired_l9,Mred_l9))
-colnames(TB_model_plot) <- c("Year","Incidence","Mortality")
-TB_model_plot2 <- cbind(melt(TB_model_plot,id.vars="Year"),"lo")
-colnames(TB_model_plot2) <- c("Year","var","value","level")
-TB_model_plot <- TB_model_plot <- as.data.frame(cbind(seq(2015,2050),Ired_u9,Mred_u9))
-colnames(TB_model_plot) <- c("Year","Incidence","Mortality")
-TB_model_plot3 <- cbind(melt(TB_model_plot,id.vars="Year"),"hi")
-colnames(TB_model_plot3) <- c("Year","var","value","level")
-
-Red_model_plot <- rbind(TB_model_plot1,TB_model_plot2,TB_model_plot3)
-
-red_plot <- ggplot(Red_model_plot, aes(x=as.numeric(as.character(Year)),y=as.numeric(as.character(value)),linetype=level))+ 
-  facet_wrap(~var,scales="free_y")+
-  geom_line()+
-  scale_y_continuous(expand = c(0, 0))+
-  scale_x_continuous(limits=c(2015,2050),expand = c(0, 0),"Year")+
-  scale_linetype_manual(values = c("dashed","solid","solid"))+
-  theme_bw() + theme(legend.position = "none")
-
-
-
-
-
-
-
-
-
-
-
-
-
-# Plot TB prevalence ################################
-plot(out[,"time"],100*out[,"Total_DS"]/out[,"Total"],ylim=c(0,1))
-
-
-# Arrange some outputs to take out to excel
-cbind(out[,"time"],1000*out[,"Total_DS"],1000*out[,"Total_MDR"]) # Prev in numbers
-cbind(out[,"time"],100*out[,"Total_DS"]/out[,"Total"],100*out[,"Total_MDR"]/out[,"Total"],
-                   100*(out[,"Total_DS"]+out[,"Total_MDR"])/out[,"Total"]) # Prev in %
-
-cbind(out[,"time"],1000*out[,"Total"]) # Total population
-
-cbind(out[,"time"],100*out[,"TB_deaths"]/out[,"Total"]) # Mortality in %
-
-cbind(out[,"time"],100*out[,"Total_L"]/out[,"Total"]) # LTBI in %
-
-cbind(out[,"time"],1000*out[,"Cases_neg"],1000*out[,"Cases_pos"],1000*out[,"Cases_ART"]) # TB cases
-
-
-# distribution CD4 no ART
-temp <- rbind(out[,"time"],1000*out[,"CD4500"],1000*out[,"CD4350_500"],1000*out[,"CD4250_349"],1000*out[,"CD4200_249"],
-                   1000*out[,"CD4100_199"],1000*out[,"CD450_99"],1000*out[,"CD450"])
-write.table(temp,file="CD4_no_ART.txt",sep=" ")
-
-# distribution CD4 with ART
-temp <- rbind(out[,"time"],1000*out[,"ART500"],1000*out[,"ART350_500"],1000*out[,"ART250_349"],1000*out[,"ART200_249"],
-              1000*out[,"ART100_199"],1000*out[,"ART50_99"],1000*out[,"ART50"])
-write.table(temp,file="CD4_ART.txt",sep=" ")
-
-# HIV prevalence 15+
-cbind(out[,"time"],100*(1000*out[,"CD4500"]+1000*out[,"CD4350_500"]+1000*out[,"CD4250_349"]+1000*out[,"CD4200_249"]+
-      1000*out[,"CD4100_199"]+1000*out[,"CD450_99"]+1000*out[,"CD450"]+1000*out[,"ART500"]+1000*out[,"ART350_500"]+
-      1000*out[,"ART250_349"]+1000*out[,"ART200_249"]+1000*out[,"ART100_199"]+1000*out[,"ART50_99"]+1000*out[,"ART50"])/(1000*rowSums(tot[,4:17])))
-
-# Number of HIV positives - we currently ignore childhood HIV
-cbind(out[,"time"],1000*out[,"CD4500"]+1000*out[,"CD4350_500"]+1000*out[,"CD4250_349"]+1000*out[,"CD4200_249"]+
-                          1000*out[,"CD4100_199"]+1000*out[,"CD450_99"]+1000*out[,"CD450"]+1000*out[,"ART500"]+1000*out[,"ART350_500"]+
-                          1000*out[,"ART250_349"]+1000*out[,"ART200_249"]+1000*out[,"ART100_199"]+1000*out[,"ART50_99"]+1000*out[,"ART50"])
 
